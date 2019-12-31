@@ -1,2 +1,2 @@
-# nl.info.gradle.plugin.ramlclientgenerator
+# Gradle Raml Java Client Generator
 Java Raml Client generator.
