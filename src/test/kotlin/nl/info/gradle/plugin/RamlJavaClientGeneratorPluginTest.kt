@@ -3,20 +3,40 @@
  */
 package nl.info.gradle.plugin
 
+import org.gradle.api.internal.plugins.PluginApplicationException
+import org.gradle.api.plugins.JavaPlugin
 import org.gradle.testfixtures.ProjectBuilder
 import kotlin.test.Test
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /**
- * A simple unit test for the 'nl.info.gradle.plugin.greeting' plugin.
+ * A simple unit test for the RamlJavaClientGeneratorPlugin.
  */
 class RamlJavaClientGeneratorPluginTest {
-    @Test fun `plugin registers task`() {
+    private val pluginName = requireNotNull(RamlJavaClientGeneratorPlugin::class.qualifiedName)
+
+    @Test fun `plugin won't register without java`() {
         // Create a test project and apply the plugin
         val project = ProjectBuilder.builder().build()
-        project.plugins.apply("nl.info.gradle.plugin.generateramljavaclient")
+
+        val exception = assertFailsWith<PluginApplicationException> {
+            project.plugins.apply(pluginName)
+        }
+        assertTrue(exception.cause is RamlJavaClientGeneratorRegistrationException)
+    }
+
+    @Test fun `plugin registers task`() {
+        // Create a test project and apply the plugin
+        val project1 = ProjectBuilder.builder().build()
+        project1.plugins.apply("java")
+        project1.plugins.apply(pluginName)
+        val project = project1
 
         // Verify the result
-        assertNotNull(project.tasks.findByName("generateramljavaclient"))
+        assertNotNull(project.tasks.findByName(RamlJavaClientGeneratorPlugin.TASK_NAME))
+        assertNotNull(project.tasks.findByName(JavaPlugin.COMPILE_JAVA_TASK_NAME))
     }
+
 }

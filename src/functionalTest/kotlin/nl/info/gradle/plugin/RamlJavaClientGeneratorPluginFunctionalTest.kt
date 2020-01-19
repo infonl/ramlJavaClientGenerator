@@ -5,34 +5,52 @@ package nl.info.gradle.plugin
 
 import org.gradle.testkit.runner.GradleRunner
 import java.io.File
+import kotlin.test.BeforeTest
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
  * A simple functional test for the 'nl.info.gradle.plugin.greeting' plugin.
  */
 class RamlJavaClientGeneratorPluginFunctionalTest {
-    @Test fun `can run task`() { // NOSONAR
-        // Setup the test build
+
+    @BeforeTest fun `setup clean project dir`() {
         val projectDir = File("build/functionalTest")
+        if (projectDir.exists()) {
+            assert(projectDir.deleteRecursively())
+        }
         projectDir.mkdirs()
+        assert(projectDir.exists())
+
         projectDir.resolve("settings.gradle").writeText("")
+    }
+
+    @Test fun `can run task`() { // NOSONAR
+        // Project dir is created during setup
+        val projectDir = File("build/functionalTest")
+        assert(projectDir.exists())
+
+        // Setup the test build
+        val ramlSourceFile = File("src/functionalTest/resources/simple_example.raml")
+        assert(ramlSourceFile.exists())
+
+        // Target dir that will be created
+        val targetDir = File("build/functionalTest/target")
+
         projectDir.resolve("build.gradle").writeText("""
             plugins {
-                id('nl.info.gradle.plugin.generateramljavaclient')
+            	id('java')
+                id('nl.info.gradle.plugin.RamlJavaClientGeneratorPlugin')
             }
 
-            sourceSets {
-                main {
-                    generateramljavaclient {
-                    }
-                }
+            repositories {
+                jcenter()
             }
 
-            generateramljavaclient {
-                targetVersion = "1_8"
-                basePackage = "test"
-                source = "risk-and-compliance-api.raml"
+            generateRamlJavaClient {
+                source = "${ramlSourceFile.absolutePath}"
+                targetFolder = "${targetDir.absolutePath}"
             }
         """)
 
@@ -40,11 +58,17 @@ class RamlJavaClientGeneratorPluginFunctionalTest {
         val runner = GradleRunner.create()
                 .forwardOutput()
                 .withPluginClasspath()
-                .withArguments("generateramljavaclient", "--stacktrace")
+                .withArguments("compileJava", "--info")
                 .withProjectDir(projectDir)
+                .withDebug(true)
         val result = runner.build()
 
-        // Verify the result
-        assertTrue(result.output.contains("Task :generateramljavaclient"))
+        // Verify the gradle result
+        assertTrue(result.output.contains("Task :generateRamlJavaClient")
+                && result.output.contains("Starting java code generation"))
+        // Verify (minimally) the plugin build result
+        assertTrue(targetDir.exists() && targetDir.listFiles().isNotEmpty())
+        // Ensure the java compile has run
+        assertFalse(result.output.contains("Task :compileJava NO-SOURCE"))
     }
 }

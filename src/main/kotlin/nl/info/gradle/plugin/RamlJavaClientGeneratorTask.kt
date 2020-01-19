@@ -1,96 +1,127 @@
 package nl.info.gradle.plugin
 
-import org.gradle.api.tasks.*
-import org.mule.client.codegen.CodeGenConfig
+import org.gradle.api.DefaultTask
+import org.gradle.api.plugins.JavaPluginConvention
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.Optional
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.TaskAction
+import org.gradle.api.tasks.options.Option
 import org.mule.client.codegen.OutputVersion
 import org.mule.client.codegen.RamlJavaClientGenerator
 import java.io.File
+import java.net.URL
 import javax.inject.Inject
 
 open class RamlJavaClientGeneratorTask
     @Inject constructor(config: RamlJavaClientGeneratorExtension)
-    : SourceTask() {
+    : DefaultTask() {
+
+    private val generatorConfig: RamlJavaClientGeneratorExtension = config
 
     @Input
+    var source = config.source
+
+    @Input
+    @Option(option = "basePackage", description = "Configures the URL to be write to the output.")
     @Optional
-    var basePackage = "raml"
+    var basePackage = config.basePackage
 
     @OutputDirectory
     @Optional
-    var targetFolder = "build/generated-raml-client"
+    var targetFolder = config.targetFolder
+
+    @Input
+    var includeAdditionalProperties = config.includeAdditionalProperties
+
+    @Input
+    var useBigDecimals = config.useBigDecimals
+
+    @Input
+    var useJava8Dates = config.useJava8Dates
+
+    @Input
+    var useJava8Optional = config.useJava8Optional
 
     @Input
     @Optional
-    var includeAdditionalProperties = true
-
-    @Input
-    @Optional
-    var targetVersion = "1.8"
-
-    @Input
-    @Optional
-    var useBigDecimals = false
-
-    @Input
-    @Optional
-    var useJava8Dates = true
-
-    @Input
-    @Optional
-    var useJava8Optional = true
-
-    @Input
-    @Optional
-    var outputVersion = "v1"
+    var outputVersion: OutputVersion = config.outputVersion
 
     @TaskAction
     fun compile() {
-        val resource = source.files.iterator().next()?.toURI()?.toURL()
-
-        logger.lifecycle("Starting java code generation"
-                + "ramlResource = ${resource}"
-                + "targetFolder = ${targetFolder}"
-                + "basePackage  = ${basePackage}")
-
-        val targetDir = File(targetFolder)
-        if (!targetDir.isDirectory) {
-            logger.info("create output dir: ${targetDir}")
-            if (!targetDir.mkdirs())
-                throw RuntimeException("Failed to create target dir: ${targetDir}")
+        if (source.isBlank()) {
+            throw RamlJavaClientGeneratorConfigurationException("No source provided.")
         }
 
-        // Code Generation Configuration
-        val codeGenConfig = CodeGenConfig()
-        codeGenConfig.includeAdditionalProperties = includeAdditionalProperties
-        codeGenConfig.targetVersion = targetVersion
-        codeGenConfig.useBigDecimals = useBigDecimals
-        codeGenConfig.useJava8Dates = useJava8Dates
-        codeGenConfig.useJava8Optional = useJava8Optional
+        val resource: URL? =
+                if (source.startsWith("http://") || source.startsWith("https://")) {
+                    URL(source)
+                } else {
+                    val sourceFile = project.file(source)
+                    if (!sourceFile.exists()) {
+                        throw RamlJavaClientGeneratorConfigurationException("Unable to find source file: $source.")
+                    }
+                    sourceFile.toURI().toURL()
+                }
 
-        // Parse the output version
-        val outV = OutputVersion.valueOf(outputVersion)
+        logger.lifecycle("""Starting java code generation
+            |source       = $resource
+            |targetFolder = $targetFolder
+            |basePackage  = $basePackage""".trimMargin())
 
-        logger.info("RamlJavaClientGenerator configuration:"
-                + "outputVersion               = ${outputVersion}"
-                + "targetVersion               = ${targetVersion}"
-                + "includeAdditionalProperties = ${includeAdditionalProperties}"
-                + "useBigDecimals              = ${useBigDecimals}"
-                + "useJava8Dates               = ${useJava8Dates}"
-                + "useJava8Optional            = ${useJava8Optional}")
+        if (targetFolder.isBlank()) {
+            throw RamlJavaClientGeneratorConfigurationException("No targetFolder provided.")
+        }
+        val targetDir = File(targetFolder)
+        if (!targetDir.isDirectory) {
+            logger.info("create output dir: $targetDir")
+            if (!targetDir.mkdirs())
+                throw RamlJavaClientGeneratorConfigurationException("Unable to setup the target folder: $targetFolder")
+        }
+
+        val javaPluginConvention: JavaPluginConvention = project.convention.getPlugin(JavaPluginConvention::class.java)
+        val targetVersion = javaPluginConvention.sourceCompatibility.name
+
+        if (!javaPluginConvention.sourceCompatibility.isJava8Compatible) {
+            if (useJava8Dates) {
+                throw RamlJavaClientGeneratorConfigurationException("Java source compatibility, " +
+                        "${javaPluginConvention.sourceCompatibility} does not support Java 8 dates.")
+            }
+            if (useJava8Optional) {
+                throw RamlJavaClientGeneratorConfigurationException("Java source compatibility, " +
+                        "${javaPluginConvention.sourceCompatibility} does not support Java 8 optionals.")
+            }
+        }
+
+        logger.info("""RamlJavaClientGenerator configuration:
+            |outputVersion               = $outputVersion
+            |targetVersion               = $targetVersion
+            |includeAdditionalProperties = $includeAdditionalProperties
+            |useBigDecimals              = $useBigDecimals
+            |useJava8Dates               = ${useJava8Dates}
+            |useJava8Optional            = $useJava8Optional""".trimMargin())
 
         // Generate code from RAML file
-        val javaClientGenerator = RamlJavaClientGenerator(basePackage, targetDir, outV, codeGenConfig)
-        javaClientGenerator.generate(resource)
-    }
+        try {
+            val javaClientGenerator = RamlJavaClientGenerator(basePackage, targetDir, outputVersion, generatorConfig)
+            javaClientGenerator.generate(resource)
+        } catch (exception: Throwable) {
+            throw RamlJavaClientGeneratorProcessingException("Failed to generate java client code.", exception)
+        }
 
-    init {
-        basePackage = config.basePackage
-        targetFolder = config.targetFolder
-        includeAdditionalProperties = config.includeAdditionalProperties
-        targetVersion = config.targetVersion
-        useBigDecimals = config.useBigDecimals
-        useJava8Dates = config.useJava8Dates
-        useJava8Optional = config.useJava8Optional
-        outputVersion = config.outputVersion
+        // Add output target as Java Compile task source
+        val fileCollection = project.files(targetFolder)
+        logger.debug("FileCollection = ${fileCollection.files}")
+
+        val sourceSet = javaPluginConvention.sourceSets.maybeCreate("main")
+        val updatedSourceSet = sourceSet.java.srcDirTrees.plus(fileCollection)
+        sourceSet.java.setSrcDirs(updatedSourceSet)
+        logger.debug("SourceSet - main = ${sourceSet.allJava.srcDirTrees}")
+
+
+        if (javaPluginConvention.sourceCompatibility.isJava8Compatible) {
+            // need to add javax.ws.rs-api dependency, if not already included
+            project.dependencies.add("compile", "javax.ws.rs:javax.ws.rs-api:2.0.1")
+        }
     }
 }

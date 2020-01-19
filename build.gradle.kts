@@ -11,7 +11,7 @@ plugins {
     `java-gradle-plugin`
 
     // Apply the Kotlin JVM plugin to add support for Kotlin.
-    id("org.jetbrains.kotlin.jvm").version("1.3.31")
+    kotlin("jvm") version "1.3.61"
 }
 
 repositories {
@@ -50,16 +50,20 @@ dependencies {
 gradlePlugin {
     // Define the plugin
     val ramljavaclientgenerator by plugins.creating {
-        id = "nl.info.gradle.plugin.generateramljavaclient"
+        id = "nl.info.gradle.plugin.RamlJavaClientGeneratorPlugin"
         implementationClass = "nl.info.gradle.plugin.RamlJavaClientGeneratorPlugin"
     }
 }
+
+// Add a source set for the unit test suite
+val unitTestSourceSet = sourceSets.maybeCreate("test")
 
 // Add a source set for the functional test suite
 val functionalTestSourceSet = sourceSets.create("functionalTest") {
 }
 
-gradlePlugin.testSourceSets(functionalTestSourceSet)
+gradlePlugin.testSourceSets(unitTestSourceSet, functionalTestSourceSet)
+
 configurations.getByName("functionalTestImplementation").extendsFrom(configurations.getByName("testImplementation"))
 
 // Add a task to run the functional tests
@@ -67,6 +71,7 @@ val functionalTest by tasks.creating(Test::class) {
     testClassesDirs = functionalTestSourceSet.output.classesDirs
     classpath = functionalTestSourceSet.runtimeClasspath
 }
+functionalTest.dependsOn("test")
 
 val check by tasks.getting(Task::class) {
     // Run the functional tests as part of `check`
