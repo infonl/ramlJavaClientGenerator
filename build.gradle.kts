@@ -9,6 +9,9 @@
 plugins {
     // Apply the Java Gradle plugin development plugin to add support for developing Gradle plugins
     `java-gradle-plugin`
+    // The Gradle Plugin for Publishing this plugin
+    id("com.gradle.plugin-publish") version "0.10.1"
+
 
     // Apply the Kotlin JVM plugin to add support for Kotlin.
     kotlin("jvm") version "1.3.61"
@@ -53,6 +56,12 @@ gradlePlugin {
         id = "nl.info.gradle.plugin.RamlJavaClientGeneratorPlugin"
         implementationClass = "nl.info.gradle.plugin.RamlJavaClientGeneratorPlugin"
     }
+}
+
+pluginBundle {
+    website = "https://github.com/infonl/ramlJavaClientGenerator"
+    vcsUrl = "https://github.com/infonl/ramlJavaClientGenerator"
+    tags = listOf("gradle", "raml", "java", "plugin", "codegen")
 }
 
 // Add a source set for the unit test suite
